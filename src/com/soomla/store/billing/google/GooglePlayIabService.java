@@ -113,7 +113,7 @@ public class GooglePlayIabService implements IIabService {
 
                     purchaseListener.success(purchase);
                 } else if (result.getResponse() == IabResult.BILLING_RESPONSE_RESULT_USER_CANCELED) {
-
+                	
                     purchaseListener.cancelled(purchase);
                 } else if (result.getResponse() == IabResult.BILLING_RESPONSE_RESULT_ITEM_ALREADY_OWNED) {
 

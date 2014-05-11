@@ -473,7 +473,11 @@ public class IabHelper {
             StoreUtils.LogDebug(TAG, "IabPurchase canceled. Response: " + IabResult.getResponseDesc(responseCode));
             try {
                 IabPurchase purchase = new IabPurchase(mPurchasingItemType, "{\"productId\":" + mPurchasingItemSku + "}", null);
-                result = new IabResult(IabResult.BILLING_RESPONSE_RESULT_USER_CANCELED, "User canceled.");
+                if (responseCode == IabResult.BILLING_RESPONSE_RESULT_ITEM_ALREADY_OWNED) {
+                	result = new IabResult(IabResult.BILLING_RESPONSE_RESULT_ITEM_ALREADY_OWNED, "Item already owned.");
+                } else {
+                	result = new IabResult(IabResult.BILLING_RESPONSE_RESULT_USER_CANCELED, "User canceled.");
+                }
                 if (mPurchaseListener != null) mPurchaseListener.onIabPurchaseFinished(result, purchase);
             } catch (JSONException e) {
                 StoreUtils.LogError(TAG, "Failed to generate canceled purchase.");
