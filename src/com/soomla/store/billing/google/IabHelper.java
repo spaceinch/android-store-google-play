@@ -40,6 +40,7 @@ import com.soomla.store.billing.IabPurchase;
 import com.soomla.store.billing.IabResult;
 import com.soomla.store.billing.IabSkuDetails;
 import com.soomla.store.data.ObscuredSharedPreferences;
+import com.soomla.store.util.DeveloperPayloadGenerator;
 
 import org.json.JSONException;
 
@@ -447,6 +448,31 @@ public class IabHelper {
                     if (mPurchaseListener != null) mPurchaseListener.onIabPurchaseFinished(result, purchase);
                     return true;
                 }
+                
+                
+               	if (StoreConfig.PAYLOAD_GENERATOR != null) {
+               		boolean success = false;
+               		
+            		try {
+            			DeveloperPayloadGenerator g = (DeveloperPayloadGenerator)Class.forName(StoreConfig.PAYLOAD_GENERATOR).newInstance();
+            			String expectedPayload = g.generatePayloadForSku(sku);
+            			
+            			StoreUtils.LogDebug("SOOMLA", "Checking " + expectedPayload + " == " + purchase.getDeveloperPayload());
+            			if (expectedPayload.equals(purchase.getDeveloperPayload())) {
+            				success = true;
+            			}
+            		} catch (Exception e) {
+            			StoreUtils.LogDebug("SOOMLA", "Error generating developer payload");            			
+            		}
+            		
+            		if (!success) {
+                        StoreUtils.LogError(TAG, "IabPurchase signature verification FAILED for sku " + sku);
+                        result = new IabResult(IabResult.IABHELPER_VERIFICATION_FAILED, "Signature verification failed for sku " + sku);
+                        if (mPurchaseListener != null) mPurchaseListener.onIabPurchaseFinished(result, purchase);
+                        return true;
+            		}
+            	}
+
                 StoreUtils.LogDebug(TAG, "IabPurchase signature successfully verified.");
             }
             catch (JSONException e) {
