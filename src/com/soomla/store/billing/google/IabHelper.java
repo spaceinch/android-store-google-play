@@ -40,7 +40,8 @@ import com.soomla.store.billing.IabPurchase;
 import com.soomla.store.billing.IabResult;
 import com.soomla.store.billing.IabSkuDetails;
 import com.soomla.store.data.ObscuredSharedPreferences;
-import com.soomla.store.util.DeveloperPayloadGenerator;
+import com.soomla.store.util.ReceiptValidator;
+
 
 import org.json.JSONException;
 
@@ -450,11 +451,11 @@ public class IabHelper {
                 }
                 
                 
-               	if (StoreConfig.PAYLOAD_GENERATOR != null) {
+               	if (StoreConfig.RECEIPT_VALIDATOR != null) {
                		boolean success = false;
                		
             		try {
-            			DeveloperPayloadGenerator g = (DeveloperPayloadGenerator)Class.forName(StoreConfig.PAYLOAD_GENERATOR).newInstance();
+            			ReceiptValidator g = (ReceiptValidator)Class.forName(StoreConfig.RECEIPT_VALIDATOR).newInstance();
             			String expectedPayload = g.generatePayloadForSku(sku);
             			
             			StoreUtils.LogDebug("SOOMLA", "Checking " + expectedPayload + " == " + purchase.getDeveloperPayload());
