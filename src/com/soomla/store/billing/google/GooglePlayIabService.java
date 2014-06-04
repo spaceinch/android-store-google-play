@@ -16,116 +16,166 @@
 package com.soomla.store.billing.google;
 
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
+import android.os.Bundle;
 
+import com.soomla.store.SoomlaApp;
+import com.soomla.store.StoreConfig;
+import com.soomla.store.StoreController;
 import com.soomla.store.StoreUtils;
 import com.soomla.store.billing.IIabService;
 import com.soomla.store.billing.IabCallbacks;
 import com.soomla.store.billing.IabException;
+import com.soomla.store.billing.IabHelper;
 import com.soomla.store.billing.IabResult;
 import com.soomla.store.billing.IabInventory;
 import com.soomla.store.billing.IabPurchase;
 import com.soomla.store.billing.IabSkuDetails;
-import com.soomla.store.data.StoreInfo;
+import com.soomla.store.data.ObscuredSharedPreferences;
 
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * This is the Google Play plugin implementation of IIabService.
+ *
+ * see parent for more docs.
+ */
 public class GooglePlayIabService implements IIabService {
 
-
+    /**
+     * see parent
+     */
+    @Override
     public void initializeBillingService(final IabCallbacks.IabInitListener iabListener) {
 
         // Set up helper for the first time, querying and synchronizing inventory
         startIabHelper(new OnIabSetupFinishedListener(iabListener));
     }
 
-    public void stopBillingService(IabCallbacks.IabInitListener iabListener) {
-        stopIabHelper(iabListener);
-    }
-
+    /**
+     * see parent
+     */
+    @Override
     public void startIabServiceInBg(IabCallbacks.IabInitListener iabListener) {
         keepIabServiceOpen = true;
         startIabHelper(new OnIabSetupFinishedListener(iabListener));
     }
 
+    /**
+     * see parent
+     */
+    @Override
     public void stopIabServiceInBg(IabCallbacks.IabInitListener iabListener) {
         keepIabServiceOpen = false;
         stopIabHelper(iabListener);
     }
 
     /**
-     *  A wrapper to access IabHelper.handleActivityResult from outside
+     * see parent
      */
-    public boolean handleActivityResult(int requestCode, int resultCode, Intent data) {
-        return isIabServiceInitialized() && mHelper.handleActivityResult(requestCode, resultCode, data);
-    }
-
     @Override
-    public void queryInventoryAsync(boolean querySkuDetails,
-                                    List<String> moreSkus,
-                                    IabCallbacks.OnQueryInventoryListener queryInventoryListener) {
-
-        mHelper.queryInventoryAsync(querySkuDetails, moreSkus, new QueryInventoryFinishedListener(queryInventoryListener));
+    public void restorePurchasesAsync(IabCallbacks.OnRestorePurchasesListener restorePurchasesListener) {
+        mHelper.restorePurchasesAsync(new RestorePurchasesFinishedListener(restorePurchasesListener));
     }
 
+    /**
+     * see parent
+     */
+    @Override
+    public void fetchSkusDetailsAsync(List<String> skus, IabCallbacks.OnFetchSkusDetailsListener fetchSkusDetailsListener) {
+        mHelper.fetchSkusDetailsAsync(skus, new FetchSkusDetailsFinishedListener(fetchSkusDetailsListener));
+    }
 
+    /**
+     * see parent
+     */
     @Override
     public boolean isIabServiceInitialized() {
         return mHelper != null;
     }
 
+    /**
+     * see parent
+     */
     @Override
     public void consume(IabPurchase purchase) throws IabException {
         mHelper.consume(purchase);
     }
 
+    /**
+     * see parent
+     */
     @Override
     public void consumeAsync(IabPurchase purchase, final IabCallbacks.OnConsumeListener consumeListener) {
-        mHelper.consumeAsync(purchase, new IabHelper.OnConsumeFinishedListener() {
+        mHelper.consumeAsync(purchase, new GoogleIabHelper.OnConsumeFinishedListener() {
             @Override
             public void onConsumeFinished(IabPurchase purchase, IabResult result) {
                 if(result.isSuccess()) {
-                    
+
                     consumeListener.success(purchase);
                 } else {
-                    
+
                     consumeListener.fail(result.getMessage());
                 }
             }
         });
     }
-    
+
+    /**
+     * Sets the public key for Google Play IAB Service.
+     * This function MUST be called once when the application loads and after StoreController
+     * initializes.
+     *
+     * @param publicKey the public key from the developer console.
+     */
+    public void setPublicKey(String publicKey) {
+        SharedPreferences prefs = new ObscuredSharedPreferences(SoomlaApp.getAppContext().
+                getSharedPreferences(StoreConfig.PREFS_NAME, Context.MODE_PRIVATE));
+        SharedPreferences.Editor edit = prefs.edit();
+
+        if (publicKey != null && publicKey.length() != 0) {
+            edit.putString(PUBLICKEY_KEY, publicKey);
+        } else if (prefs.getString(PUBLICKEY_KEY, "").length() == 0) {
+            String err = "publicKey is null or empty. Can't initialize store!!";
+            StoreUtils.LogError(TAG, err);
+        }
+        edit.commit();
+    }
+
+    /**
+     * see parent
+     */
     @Override
-    public void launchPurchaseFlow(Activity act,
-                                   String sku,
+    public void launchPurchaseFlow(String sku,
                                    final IabCallbacks.OnPurchaseListener purchaseListener,
                                    String extraData) {
-        mHelper.launchPurchaseFlow(act, sku, Consts.RC_REQUEST, new IabHelper.OnIabPurchaseFinishedListener() {
-            @Override
-            public void onIabPurchaseFinished(IabResult result, IabPurchase purchase) {
 
-                /**
-                 * Wait to see if the purchase succeeded, then start the consumption process.
-                 */
-                StoreUtils.LogDebug(TAG, "IabPurchase finished: " + result + ", purchase: " + purchase);
-                if (result.getResponse() == IabResult.BILLING_RESPONSE_RESULT_OK) {
+        SharedPreferences prefs = new ObscuredSharedPreferences(SoomlaApp.getAppContext().
+                getSharedPreferences(StoreConfig.PREFS_NAME, Context.MODE_PRIVATE));
+        String publicKey = prefs.getString(PUBLICKEY_KEY, "");
+        if (publicKey.length() == 0 || publicKey.equals("[YOUR PUBLIC KEY FROM THE MARKET]")) {
+            StoreUtils.LogError(TAG, "You didn't provide a public key! You can't make purchases. the key: " + publicKey);
+            throw new IllegalStateException();
+        }
 
-                    purchaseListener.success(purchase);
-                } else if (result.getResponse() == IabResult.BILLING_RESPONSE_RESULT_USER_CANCELED) {
-                	
-                    purchaseListener.cancelled(purchase);
-                } else if (result.getResponse() == IabResult.BILLING_RESPONSE_RESULT_ITEM_ALREADY_OWNED) {
+        try {
+            final Intent intent = new Intent(SoomlaApp.getAppContext(), IabActivity.class);
+            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            intent.putExtra(SKU, sku);
+            intent.putExtra(EXTRA_DATA, extraData);
 
-                    purchaseListener.alreadyOwned(purchase);
-                } else {
+            mSavedOnPurchaseListener = purchaseListener;
+            SoomlaApp.getAppContext().startActivity(intent);
 
-                    purchaseListener.fail(result.getMessage());
-                }
+        } catch(Exception e){
+            String msg = "(launchPurchaseFlow) Error purchasing item " + e.getMessage();
+            StoreUtils.LogError(TAG, msg);
+            purchaseListener.fail(msg);
+        }
 
-                stopIabHelper(null);
-            }
-        }, extraData);
     }
 
 
@@ -149,7 +199,7 @@ public class GooglePlayIabService implements IIabService {
         }
 
         StoreUtils.LogDebug(TAG, "Creating IAB helper.");
-        mHelper = new IabHelper();
+        mHelper = new GoogleIabHelper();
 
         StoreUtils.LogDebug(TAG, "IAB helper Starting setup.");
         mHelper.startSetup(onIabSetupFinishedListener);
@@ -201,20 +251,21 @@ public class GooglePlayIabService implements IIabService {
 
 
     /**
-     * Handle incomplete purchase and refund after initialization
+     * Handle Restore Purchases processes
      */
-    private class QueryInventoryFinishedListener implements IabHelper.QueryInventoryFinishedListener {
+    private class RestorePurchasesFinishedListener implements IabHelper.RestorePurchasessFinishedListener {
 
 
-        private IabCallbacks.OnQueryInventoryListener mQueryInventoryListener;
+        private IabCallbacks.OnRestorePurchasesListener mRestorePurchasesListener;
 
-        public QueryInventoryFinishedListener(IabCallbacks.OnQueryInventoryListener queryInventoryListener) {
-            this.mQueryInventoryListener            = queryInventoryListener;
+        public RestorePurchasesFinishedListener(IabCallbacks.OnRestorePurchasesListener restorePurchasesListener) {
+            this.mRestorePurchasesListener            = restorePurchasesListener;
         }
 
-        public void onQueryInventoryFinished(IabResult result, IabInventory inventory) {
-            StoreUtils.LogDebug(TAG, "Query inventory succeeded");
-            if (result.getResponse() == IabResult.BILLING_RESPONSE_RESULT_OK && mQueryInventoryListener != null) {
+        @Override
+        public void onRestorePurchasessFinished(IabResult result, IabInventory inventory) {
+            StoreUtils.LogDebug(TAG, "Restore Purchases succeeded");
+            if (result.getResponse() == IabResult.BILLING_RESPONSE_RESULT_OK && mRestorePurchasesListener != null) {
                 // fetching owned items
                 List<String> itemSkus = inventory.getAllOwnedSkus(IabHelper.ITEM_TYPE_INAPP);
                 List<IabPurchase> purchases = new ArrayList<IabPurchase>();
@@ -222,6 +273,33 @@ public class GooglePlayIabService implements IIabService {
                     IabPurchase purchase = inventory.getPurchase(sku);
                     purchases.add(purchase);
                 }
+
+                this.mRestorePurchasesListener.success(purchases);
+            } else {
+                StoreUtils.LogError(TAG, "Wither mRestorePurchasesListener==null OR Restore purchases error: " + result.getMessage());
+                if (this.mRestorePurchasesListener != null) this.mRestorePurchasesListener.fail(result.getMessage());
+            }
+
+            stopIabHelper(null);
+        }
+    }
+
+    /**
+     * Handle Fetch Skus Details processes
+     */
+    private class FetchSkusDetailsFinishedListener implements IabHelper.FetchSkusDetailsFinishedListener {
+
+
+        private IabCallbacks.OnFetchSkusDetailsListener mFetchSkusDetailsListener;
+
+        public FetchSkusDetailsFinishedListener(IabCallbacks.OnFetchSkusDetailsListener fetchSkusDetailsListener) {
+            this.mFetchSkusDetailsListener            = fetchSkusDetailsListener;
+        }
+
+        @Override
+        public void onFetchSkusDetailsFinished(IabResult result, IabInventory inventory) {
+            StoreUtils.LogDebug(TAG, "Restore Purchases succeeded");
+            if (result.getResponse() == IabResult.BILLING_RESPONSE_RESULT_OK && mFetchSkusDetailsListener != null) {
 
                 // @lassic (May 1st): actually, here (query finished) it only makes sense to get the details
                 // of the SKUs we already queried for
@@ -234,17 +312,19 @@ public class GooglePlayIabService implements IIabService {
                     }
                 }
 
-                this.mQueryInventoryListener.success(purchases, skuDetails);
+                this.mFetchSkusDetailsListener.success(skuDetails);
             } else {
-                StoreUtils.LogError(TAG, "Wither mQueryInventoryListener==null OR Query inventory error: " + result.getMessage());
-                if (this.mQueryInventoryListener != null) this.mQueryInventoryListener.fail(result.getMessage());
+                StoreUtils.LogError(TAG, "Wither mFetchSkusDetailsListener==null OR Fetching details error: " + result.getMessage());
+                if (this.mFetchSkusDetailsListener != null) this.mFetchSkusDetailsListener.fail(result.getMessage());
             }
 
             stopIabHelper(null);
         }
     }
 
-
+    /**
+     * Handle setup billing service process
+     */
     private class OnIabSetupFinishedListener implements IabHelper.OnIabSetupFinishedListener {
 
         private IabCallbacks.IabInitListener mIabInitListener;
@@ -269,8 +349,131 @@ public class GooglePlayIabService implements IIabService {
         }
     }
 
+    /**
+     * Handle setup billing purchase process
+     */
+    private static class OnIabPurchaseFinishedListener implements IabHelper.OnIabPurchaseFinishedListener {
+
+        public OnIabPurchaseFinishedListener() {
+        }
+
+
+        @Override
+        public void onIabPurchaseFinished(IabResult result, IabPurchase purchase) {
+            /**
+             * Wait to see if the purchase succeeded, then start the consumption process.
+             */
+            StoreUtils.LogDebug(TAG, "IabPurchase finished: " + result + ", purchase: " + purchase);
+
+            GooglePlayIabService.getInstance().mWaitingServiceResponse = false;
+
+            if (result.getResponse() == IabResult.BILLING_RESPONSE_RESULT_OK) {
+
+                GooglePlayIabService.getInstance().mSavedOnPurchaseListener.success(purchase);
+            } else if (result.getResponse() == IabResult.BILLING_RESPONSE_RESULT_USER_CANCELED) {
+
+                GooglePlayIabService.getInstance().mSavedOnPurchaseListener.cancelled(purchase);
+            } else if (result.getResponse() == IabResult.BILLING_RESPONSE_RESULT_ITEM_ALREADY_OWNED) {
+
+                GooglePlayIabService.getInstance().mSavedOnPurchaseListener.alreadyOwned(purchase);
+            } else {
+
+                GooglePlayIabService.getInstance().mSavedOnPurchaseListener.fail(result.getMessage());
+            }
+            GooglePlayIabService.getInstance().mSavedOnPurchaseListener = null;
+
+            GooglePlayIabService.getInstance().stopIabHelper(null);
+        }
+    }
+
+
+    /**
+     * Android In-App Billing v3 requires an activity to receive the result of the billing process.
+     * This activity's job is to do just that, it also contains the white/green IAB window.
+     * Please do NOT start it on your own.
+     */
+    public static class IabActivity extends Activity {
+
+        @Override
+        protected void onCreate(Bundle savedInstanceState) {
+            super.onCreate(savedInstanceState);
+
+            Intent intent = getIntent();
+            String productId = intent.getStringExtra(SKU);
+            String payload = intent.getStringExtra(EXTRA_DATA);
+
+            try {
+                OnIabPurchaseFinishedListener onIabPurchaseFinishedListener = new OnIabPurchaseFinishedListener();
+                GooglePlayIabService.getInstance().mWaitingServiceResponse = true;
+                GooglePlayIabService.getInstance().mHelper.launchPurchaseFlow(this, productId, onIabPurchaseFinishedListener, payload);
+            } catch (Exception e) {
+                finish();
+
+                String msg = "Error purchasing item " + e.getMessage();
+                StoreUtils.LogError(TAG, msg);
+                GooglePlayIabService.getInstance().mWaitingServiceResponse = false;
+                if (GooglePlayIabService.getInstance().mSavedOnPurchaseListener != null) {
+                    GooglePlayIabService.getInstance().mSavedOnPurchaseListener.fail(msg);
+                    GooglePlayIabService.getInstance().mSavedOnPurchaseListener = null;
+                }
+            }
+        }
+
+        @Override
+        protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+            if (!GooglePlayIabService.getInstance().mHelper.handleActivityResult(requestCode, resultCode, data)) {
+                super.onActivityResult(requestCode, resultCode, data);
+            }
+
+            finish();
+        }
+
+        @Override
+        protected void onStop() {
+            super.onStop();
+        }
+
+        @Override
+        protected void onDestroy() {
+
+            if (GooglePlayIabService.getInstance().mWaitingServiceResponse)
+            {
+                GooglePlayIabService.getInstance().mWaitingServiceResponse = false;
+                String err = "IabActivity is destroyed during purchase.";
+                StoreUtils.LogError(TAG, err);
+                if (GooglePlayIabService.getInstance().mSavedOnPurchaseListener != null) {
+                    GooglePlayIabService.getInstance().mSavedOnPurchaseListener.fail(err);
+                    GooglePlayIabService.getInstance().mSavedOnPurchaseListener = null;
+                }
+            }
+
+            super.onDestroy();
+        }
+    }
+
+
+    public static GooglePlayIabService getInstance() {
+        return (GooglePlayIabService) StoreController.getInstance().getInAppBillingService();
+    }
+
+
     /* Private Members */
     private static final String TAG = "SOOMLA GooglePlayIabService";
-    private IabHelper mHelper;
+    private GoogleIabHelper mHelper;
     private boolean keepIabServiceOpen = false;
+    private boolean mWaitingServiceResponse = false;
+
+    public static final String PUBLICKEY_KEY = "PO#SU#SO#GU";
+
+    private static final String SKU = "ID#sku";
+    private static final String EXTRA_DATA = "ID#extraData";
+    private IabCallbacks.OnPurchaseListener mSavedOnPurchaseListener = null;
+
+    /**
+     * When set to true, this removes the need to verify purchases when there's no signature.
+     * This is useful while you are in development and testing stages of your game.
+     *
+     * WARNING: Do NOT publish your app with this set to true!!!
+     */
+    public static boolean AllowAndroidTestPurchases = false;
 }
