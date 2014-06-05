@@ -234,8 +234,8 @@ public class GoogleIabHelper extends IabHelper {
             		
             		if (!success) {
                         StoreUtils.LogError(TAG, "IabPurchase signature verification FAILED for sku " + sku);
-                        result = new IabResult(IabResult.IABHELPER_VERIFICATION_FAILED, "Signature verification failed for sku " + sku);
-                        if (mPurchaseListener != null) mPurchaseListener.onIabPurchaseFinished(result, purchase);
+                        result = new IabResult(IabResult.IABHELPER_VERIFICATION_FAILED, "Payload didn't match for sku " + sku);
+                        purchaseFailed(result, purchase);
                         return true;
             		}
             	}
