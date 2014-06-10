@@ -45,6 +45,11 @@ import java.util.List;
  */
 public class GooglePlayIabService implements IIabService {
 
+	@Override
+	public String name() {
+		return IIabService.IAB_SERVICE_GOOGLE_PLAY;
+	}
+	
     /**
      * see parent
      */
